@@ -6,7 +6,7 @@ import { createPublicClient, http, formatUnits } from "viem";
 import { baseSepolia } from "viem/chains";
 import Burner from "@/lib/models/burner";
 
-// GET /api/earn/balance — get lpUSD balance across user's burners + vault TVL
+// GET /api/earn/balance — get user's own lpUSD balance + vault TVL
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuth(req);
@@ -17,26 +17,22 @@ export async function GET(req: NextRequest) {
       transport: http(process.env.RPC_URL || "https://sepolia.base.org"),
     });
 
-    // Find all active burners for this user
+    // Always show only the logged-in user's own burners
     const burners = await Burner.find({
       userId: user._id,
       vaultAddress: EARN_VAULT_ADDRESS,
       status: "active",
     });
 
-    console.log(`[Earn Balance] User: ${user._id}, found ${burners.length} active burners`);
-
-    // Sum lpUSD balance across all active burners
+    // Sum lpUSD balance across user's active burners
     let totalLp = 0n;
     for (const b of burners) {
-      console.log(`[Earn Balance] Checking burner ${b.address}...`);
       const bal = await publicClient.readContract({
         address: EARN_VAULT_ADDRESS as `0x${string}`,
         abi: EARN_VAULT_ABI,
         functionName: "balanceOf",
         args: [b.address as `0x${string}`],
       }) as bigint;
-      console.log(`[Earn Balance] Burner ${b.address} lpUSD: ${bal}`);
       totalLp += bal;
     }
 
