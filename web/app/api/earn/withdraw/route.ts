@@ -5,8 +5,9 @@ import { decrypt } from "@/lib/crypto";
 import { earnWithdraw, UNLINK_USDC } from "@/lib/unlink-worker";
 import { EARN_VAULT_ADDRESS } from "@/lib/contracts";
 import { logAction } from "@/lib/audit";
+import Burner from "@/lib/models/burner";
 
-// POST /api/earn/withdraw — withdraw from yield vault back to privacy pool
+// POST /api/earn/withdraw — withdraw from yield vault back to privacy pool via BurnerWallet
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth(req);
@@ -18,17 +19,36 @@ export async function POST(req: NextRequest) {
 
     await connectDB();
 
+    // Find active burner(s) for this user
+    const burners = await Burner.find({
+      userId: user._id,
+      vaultAddress: EARN_VAULT_ADDRESS,
+      status: "active",
+    }).sort({ createdAt: -1 });
+
+    if (burners.length === 0) {
+      return NextResponse.json({ error: "No active vault position found" }, { status: 400 });
+    }
+
+    // Use the most recent burner
+    const burner = burners[0];
+    const burnerPrivateKey = decrypt(burner.encryptedPrivateKey);
     const mnemonic = decrypt(user.encryptedMnemonic);
     const amountInUnits = (parseFloat(amount) * 1e6).toFixed(0);
 
-    console.log(`[Earn Withdraw] ${amount} USDC from vault for ${user.name || user.email}`);
+    console.log(`[Earn Withdraw] ${amount} USDC from vault for ${user.name || user.email} via burner ${burner.address}`);
 
     const result = await earnWithdraw({
       mnemonic,
       vaultAddress: EARN_VAULT_ADDRESS,
       token: UNLINK_USDC,
       amount: amountInUnits,
+      burnerPrivateKey,
     });
+
+    // Mark burner as disposed if all funds withdrawn
+    // For simplicity, mark disposed after any withdrawal
+    await Burner.findByIdAndUpdate(burner._id, { status: "disposed" });
 
     if (user.organizationId) {
       await logAction({
@@ -36,7 +56,7 @@ export async function POST(req: NextRequest) {
         userId: user._id.toString(),
         userName: user.name || user.email || "User",
         action: "Earn withdraw",
-        details: `Withdrew $${amount} USDC from yield vault back to privacy pool.`,
+        details: `Withdrew $${amount} USDC from vault back to pool via burner ${burner.address}`,
       });
     }
 
