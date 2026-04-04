@@ -13,12 +13,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Loader2, Plus, Trash2, FolderOpen } from "lucide-react";
+import { Loader2, Plus, Trash2, FolderOpen, Users } from "lucide-react";
 import { toast } from "sonner";
 
 export default function DepartmentsPage() {
   const { getAccessToken } = useAuth();
   const [departments, setDepartments] = useState<any[]>([]);
+  const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -28,8 +29,12 @@ export default function DepartmentsPage() {
     try {
       const token = await getAccessToken();
       if (!token) return;
-      const res = await api.departments.list(token);
-      setDepartments(res.departments || []);
+      const [deptRes, empRes] = await Promise.all([
+        api.departments.list(token),
+        api.employees.list(token),
+      ]);
+      setDepartments(deptRes.departments || []);
+      setEmployees(empRes.employees || []);
     } catch {
       toast.error("Failed to load departments");
     } finally {
@@ -124,26 +129,50 @@ export default function DepartmentsPage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {departments.map((dept: any) => (
-            <Card key={dept._id} className="group">
-              <CardContent className="pt-6 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-foreground/5 flex items-center justify-center">
-                    <FolderOpen className="w-4 h-4 text-muted-foreground" />
+          {departments.map((dept: any) => {
+            const deptEmployees = employees.filter(
+              (e: any) => e.department?._id === dept._id || e.department === dept._id
+            );
+            return (
+              <Card key={dept._id} className="group">
+                <CardContent className="pt-6 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-foreground/5 flex items-center justify-center">
+                        <FolderOpen className="w-4 h-4 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <span className="font-medium">{dept.name}</span>
+                        <div className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Users className="w-3 h-3" /> {deptEmployees.length} member{deptEmployees.length !== 1 ? "s" : ""}
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(dept._id)}
+                      className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
                   </div>
-                  <span className="font-medium">{dept.name}</span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDelete(dept._id)}
-                  className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
+                  {deptEmployees.length > 0 && (
+                    <div className="space-y-1.5 pt-1 border-t border-border">
+                      {deptEmployees.map((emp: any) => (
+                        <div key={emp.id || emp._id} className="flex items-center gap-2 text-sm py-1">
+                          <div className="w-6 h-6 rounded-full bg-foreground/10 flex items-center justify-center text-xs font-medium">
+                            {(emp.name || "?")[0].toUpperCase()}
+                          </div>
+                          <span>{emp.name || emp.email || "Unnamed"}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>
