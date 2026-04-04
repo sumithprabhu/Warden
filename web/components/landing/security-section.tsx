@@ -54,8 +54,7 @@ export function SecuritySection() {
             }`}
           >
             <span className="inline-flex items-center gap-3 text-sm font-mono text-muted-foreground mb-6">
-              <span className="w-8 h-px bg-foreground/30" />
-              Security
+              [Security]
             </span>
             <h2 className="text-4xl lg:text-6xl font-display tracking-tight mb-8">
               Privacy is
