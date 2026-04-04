@@ -1,10 +1,8 @@
 import { execFile } from "child_process";
 import path from "path";
-import { fileURLToPath } from "url";
 
-// Resolve worker path relative to this file (works in both local and Vercel)
-const __dirname2 = typeof __dirname !== "undefined" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
-const WORKER_PATH = path.resolve(__dirname2, "..", "workers", "unlink-op.mjs");
+// Always resolve from project root (process.cwd()) — works in both dev and production
+const WORKER_PATH = path.resolve(process.cwd(), "workers", "unlink-op.mjs");
 const API_KEY = process.env.UNLINK_API_KEY!;
 
 // Real USDC on Base Sepolia — the only token Unlink's pool supports
@@ -120,6 +118,7 @@ export async function earnWithdraw(params: {
   vaultAddress: string;
   token: string;
   amount: string;
+  burnerPrivateKey: string;
 }) {
   return runWorker("earn-withdraw", params);
 }

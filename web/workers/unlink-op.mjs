@@ -204,105 +204,189 @@ async function main() {
       }
 
       case "earn-deposit": {
-        // Withdraw from privacy pool → deployer wallet → approve USDC → vault deposit → lpUSD
+        // BurnerWallet flow: create burner → fund from pool → approve → vault deposit → return burner key
         // params: mnemonic, apiKey, vaultAddress, token, amount
         const { mnemonic, apiKey: ak, vaultAddress, token, amount } = params;
-
-        const evmKey = (process.env.DEPLOYER_PRIVATE_KEY || process.env.EVM_PRIVATE_KEY);
-        const evmAccount = privateKeyToAccount(evmKey);
+        const apiClient = createUnlinkClient(ENGINE_URL, ak);
+        const account = unlinkAccount.fromMnemonic({ mnemonic });
+        const accountKeys = await account.getAccountKeys();
         const publicClient = createPublicClient({ chain: baseSepolia, transport: http(RPC_URL) });
-        const walletClient = createWalletClient({
-          account: evmAccount, chain: baseSepolia, transport: http(RPC_URL),
+
+        // 1. Create burner wallet with custom storage to capture private key
+        const burnerStore = {
+          _keys: new Map(),
+          async save(addr, pk) { this._keys.set(addr.toLowerCase(), pk); },
+          async load(addr) { return this._keys.get(addr.toLowerCase()) ?? null; },
+          async delete(addr) { this._keys.delete(addr.toLowerCase()); },
+        };
+        console.error("[earn-deposit] Creating burner wallet...");
+        const burner = await BurnerWallet.create(burnerStore);
+        console.error(`[earn-deposit] Burner: ${burner.address}`);
+
+        // 2. Fund burner from privacy pool
+        console.error("[earn-deposit] Funding burner from pool...");
+        const fundResult = await burner.fundFromPool(apiClient, {
+          senderKeys: accountKeys, token, amount, environment: "base-sepolia",
         });
 
-        // 1. Withdraw from privacy pool to deployer wallet
-        console.error("[earn-deposit] Withdrawing from pool to deployer...");
-        const hlClient = createUnlink({
-          engineUrl: ENGINE_URL, apiKey: ak,
-          account: unlinkAccount.fromMnemonic({ mnemonic }),
-          evm: unlinkEvm.fromViem({ walletClient, publicClient }),
-        });
-        await hlClient.ensureRegistered();
+        // Poll fund tx
+        for (let i = 0; i < 60; i++) {
+          const tx = await getTransaction(apiClient, fundResult.txId);
+          if (tx.status === "confirmed" || tx.status === "relayed") break;
+          if (tx.status === "failed" || tx.status === "rejected") throw new Error("Fund tx failed: " + tx.status);
+          await new Promise(r => setTimeout(r, 5000));
+        }
 
-        const withdrawResult = await hlClient.withdraw({
-          token, amount, recipientEvmAddress: evmAccount.address,
-        });
-        await hlClient.pollTransactionStatus(withdrawResult.txId, {
-          intervalMs: 5000, timeoutMs: 300000,
-        });
-        console.error("[earn-deposit] Pool withdrawal confirmed");
+        // Wait for gas funding from relayer
+        console.error("[earn-deposit] Waiting for gas funding...");
+        for (let i = 0; i < 30; i++) {
+          const s = await burner.getStatus(apiClient);
+          if (s.status === "funded") { console.error("[earn-deposit] Burner funded"); break; }
+          if (s.status === "gas_funding_failed") throw new Error("Gas funding failed");
+          await new Promise(r => setTimeout(r, 5000));
+        }
 
-        // 2. Approve USDC to vault
+        // 3. Approve USDC to vault from burner
         console.error("[earn-deposit] Approving USDC to vault...");
-        const approveTx = await walletClient.writeContract({
+        const burnerViemAccount = burner.toViemAccount();
+        const approveWC = createWalletClient({
+          account: burnerViemAccount, chain: baseSepolia, transport: http(RPC_URL),
+        });
+        const approveTx = await approveWC.writeContract({
           address: token, abi: erc20Abi, functionName: "approve",
           args: [vaultAddress, BigInt(amount)],
         });
-        await publicClient.waitForTransactionReceipt({ hash: approveTx });
+        await publicClient.waitForTransactionReceipt({ hash: approveTx, confirmations: 1 });
 
-        // 3. Deposit into vault → get lpUSD
+        // Verify allowance is actually set before proceeding
+        for (let i = 0; i < 10; i++) {
+          const allowance = await publicClient.readContract({
+            address: token, abi: erc20Abi, functionName: "allowance",
+            args: [burnerViemAccount.address, vaultAddress],
+          });
+          if (allowance >= BigInt(amount)) {
+            console.error(`[earn-deposit] Approval verified: ${allowance}`);
+            break;
+          }
+          console.error(`[earn-deposit] Waiting for allowance... (${allowance})`);
+          await new Promise(r => setTimeout(r, 2000));
+        }
+
+        // 4. Deposit into vault — fresh walletClient to avoid stale nonce
         console.error("[earn-deposit] Depositing into vault...");
+        const depositWC = createWalletClient({
+          account: burnerViemAccount, chain: baseSepolia, transport: http(RPC_URL),
+        });
         const VAULT_DEPOSIT_ABI = [{ inputs: [{ type: "uint256", name: "amount" }], name: "deposit", outputs: [], stateMutability: "nonpayable", type: "function" }];
-        const vaultTx = await walletClient.writeContract({
+        const vaultTx = await depositWC.writeContract({
           address: vaultAddress, abi: VAULT_DEPOSIT_ABI, functionName: "deposit",
           args: [BigInt(amount)],
         });
         await publicClient.waitForTransactionReceipt({ hash: vaultTx });
+        console.error("[earn-deposit] Vault deposit confirmed");
 
-        // 4. Check lpUSD balance
+        // 5. Check lpUSD balance on burner
         const LP_BAL_ABI = [{ inputs: [{ type: "address", name: "account" }], name: "balanceOf", outputs: [{ type: "uint256" }], stateMutability: "view", type: "function" }];
         const lpBalance = await publicClient.readContract({
-          address: vaultAddress, abi: LP_BAL_ABI, functionName: "balanceOf", args: [evmAccount.address],
+          address: vaultAddress, abi: LP_BAL_ABI, functionName: "balanceOf", args: [burner.address],
         });
 
+        // Return burner private key so API can encrypt & store it in DB
+        const burnerPrivateKey = await burnerStore.load(burner.address);
+
         result = {
+          burnerAddress: burner.address,
+          burnerPrivateKey,
           vaultTxHash: vaultTx,
           lpBalance: lpBalance.toString(),
-          withdrawTxId: withdrawResult.txId,
+          fundTxId: fundResult.txId,
         };
         break;
       }
 
       case "earn-withdraw": {
-        // Vault withdraw → get USDC → deposit back to privacy pool
-        // params: mnemonic, apiKey, vaultAddress, token, amount
-        const { mnemonic, apiKey: ak, vaultAddress, token, amount } = params;
-
-        const evmKey = (process.env.DEPLOYER_PRIVATE_KEY || process.env.EVM_PRIVATE_KEY);
-        const evmAccount = privateKeyToAccount(evmKey);
+        // Restore burner → vault withdraw → approve Permit2 → deposit back to pool
+        // params: mnemonic, apiKey, vaultAddress, token, amount, burnerPrivateKey
+        const { mnemonic, apiKey: ak, vaultAddress, token, amount, burnerPrivateKey } = params;
+        const apiClient = createUnlinkClient(ENGINE_URL, ak);
         const publicClient = createPublicClient({ chain: baseSepolia, transport: http(RPC_URL) });
-        const walletClient = createWalletClient({
-          account: evmAccount, chain: baseSepolia, transport: http(RPC_URL),
-        });
 
-        // 1. Withdraw from vault (burn lpUSD → get USDC)
+        // Restore burner from its private key
+        const burnerAccount = privateKeyToAccount(burnerPrivateKey);
+        console.error(`[earn-withdraw] Using burner: ${burnerAccount.address}`);
+
+        // 1. Withdraw from vault (burn lpUSD → get USDC on burner)
         console.error("[earn-withdraw] Withdrawing from vault...");
+        const vaultWC = createWalletClient({
+          account: burnerAccount, chain: baseSepolia, transport: http(RPC_URL),
+        });
         const VAULT_WITHDRAW_ABI = [{ inputs: [{ type: "uint256", name: "amount" }], name: "withdraw", outputs: [], stateMutability: "nonpayable", type: "function" }];
-        const withdrawTx = await walletClient.writeContract({
+        const withdrawTx = await vaultWC.writeContract({
           address: vaultAddress, abi: VAULT_WITHDRAW_ABI, functionName: "withdraw",
           args: [BigInt(amount)],
         });
-        await publicClient.waitForTransactionReceipt({ hash: withdrawTx });
+        await publicClient.waitForTransactionReceipt({ hash: withdrawTx, confirmations: 1 });
+        console.error("[earn-withdraw] Vault withdrawal confirmed");
 
-        // 2. Deposit USDC back to Unlink pool
-        console.error("[earn-withdraw] Depositing USDC back to pool...");
+        // 2. Approve Permit2 from burner — fresh walletClient
+        console.error("[earn-withdraw] Approving Permit2...");
+        const info = await BurnerWallet.getInfo(apiClient);
+        const approveWC = createWalletClient({
+          account: burnerAccount, chain: baseSepolia, transport: http(RPC_URL),
+        });
+        const approveP2Tx = await approveWC.writeContract({
+          address: token, abi: erc20Abi, functionName: "approve",
+          args: [info.permit2_address, BigInt(amount)],
+        });
+        await publicClient.waitForTransactionReceipt({ hash: approveP2Tx, confirmations: 1 });
+        console.error("[earn-withdraw] Permit2 approved");
+
+        // 3. Deposit USDC back to privacy pool from burner
+        console.error("[earn-withdraw] Depositing back to pool...");
         const hlClient = createUnlink({
           engineUrl: ENGINE_URL, apiKey: ak,
           account: unlinkAccount.fromMnemonic({ mnemonic }),
-          evm: unlinkEvm.fromViem({ walletClient, publicClient }),
         });
         await hlClient.ensureRegistered();
+        const unlinkAddr = await hlClient.getAddress();
 
-        await hlClient.ensureErc20Approval({ token, amount });
-        const depResult = await hlClient.deposit({ token, amount });
-        const confirmed = await hlClient.pollTransactionStatus(depResult.txId, {
-          intervalMs: 5000, timeoutMs: 300000,
+        const nonce = await getPermit2Nonce(apiClient, burnerAccount.address);
+        const signWC = createWalletClient({
+          account: burnerAccount, chain: baseSepolia, transport: http(RPC_URL),
         });
+        const { deposit: sdkDeposit } = await import("@unlink-xyz/sdk");
+        const depResult = await sdkDeposit(apiClient, {
+          unlinkAddress: unlinkAddr,
+          evmAddress: burnerAccount.address,
+          token, amount, environment: "base-sepolia",
+          nonce,
+          deadline: Math.floor(Date.now() / 1000) + 3600,
+          chainId: info.chain_id,
+          permit2Address: info.permit2_address,
+          poolAddress: info.pool_address,
+          signTypedData: async (typedData) => {
+            return signWC.signTypedData({
+              domain: typedData.domain,
+              types: typedData.types,
+              primaryType: typedData.primaryType,
+              message: typedData.value,
+            });
+          },
+        });
+
+        // Poll deposit
+        for (let i = 0; i < 60; i++) {
+          const tx = await getTransaction(apiClient, depResult.txId);
+          if (tx.status === "confirmed" || tx.status === "relayed") break;
+          if (tx.status === "failed" || tx.status === "rejected") throw new Error("Deposit back failed: " + tx.status);
+          await new Promise(r => setTimeout(r, 5000));
+        }
+        console.error("[earn-withdraw] Pool deposit confirmed");
 
         result = {
           withdrawTxHash: withdrawTx,
           poolDepositTxId: depResult.txId,
-          status: confirmed.status,
+          burnerAddress: burnerAccount.address,
         };
         break;
       }
