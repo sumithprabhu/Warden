@@ -345,7 +345,7 @@ export default function EmployeesPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleDeactivate(emp._id)}
+                          onClick={() => handleDeactivate(emp.id || emp._id)}
                           className="text-muted-foreground hover:text-destructive"
                         >
                           <UserMinus className="w-4 h-4" />

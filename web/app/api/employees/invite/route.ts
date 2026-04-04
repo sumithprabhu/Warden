@@ -62,7 +62,8 @@ export async function POST(req: NextRequest) {
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
     });
 
-    const inviteUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/invite/${invite.token}`;
+    const baseUrl = req.headers.get("origin") || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const inviteUrl = `${baseUrl}/invite/${invite.token}`;
 
     // Send invite email if email provided and Resend is configured
     if (email && process.env.RESEND_API_KEY && process.env.RESEND_API_KEY !== "your-resend-key") {
