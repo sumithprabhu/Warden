@@ -77,7 +77,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="lg:hidden fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
           <div className="absolute left-0 top-0 bottom-0 w-64 bg-background border-r border-border p-4 flex flex-col">
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center justify-between mb-6 pb-4 border-b border-border">
               <span className="font-display text-xl">Warden</span>
               <button onClick={() => setSidebarOpen(false)} className="p-1">
                 <X className="w-5 h-5" />
@@ -90,10 +90,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Desktop sidebar */}
       <aside className="hidden lg:flex fixed left-0 top-0 bottom-0 w-60 border-r border-border bg-background flex-col p-4">
-        <div className="mb-8">
-          <span className="font-display text-xl">Warden</span>
+        <div className="mb-6 pb-4 border-b border-border flex items-center justify-center gap-2">
+          <span className="font-display text-sm font-medium">Warden</span>
           {user.organization?.name && (
-            <p className="text-xs text-muted-foreground mt-1 truncate">{user.organization.name}</p>
+            <>
+              <span className="text-border">|</span>
+              <span className="text-sm text-muted-foreground truncate">{user.organization.name}</span>
+            </>
           )}
         </div>
         <SidebarContent pathname={pathname} onLogout={logout} orgName={user.organization?.name} />
