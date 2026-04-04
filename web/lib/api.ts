@@ -143,6 +143,8 @@ export const api = {
         body: JSON.stringify(data),
       }),
     vesting: (token: string) => request<any>("/api/me/vesting", { token }),
+    payslip: (token: string, paymentId: string) =>
+      request<any>(`/api/me/payslip?id=${paymentId}`, { token }),
   },
 
   earn: {
