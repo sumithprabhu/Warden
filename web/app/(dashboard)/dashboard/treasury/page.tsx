@@ -77,36 +77,41 @@ export default function TreasuryPage() {
       const token = await getAccessToken();
       if (!token) throw new Error("Not authenticated");
 
-      // Step 1: Transfer USDC from connected wallet to deployer/funding address
-      setDepositStep("Sending USDC from your wallet...");
-      const { walletClient, publicClient, address } = await getProvider();
       const amountInUnits = parseUnits(depositAmount, 6);
 
-      // Check USDC balance
-      const balance = await publicClient.readContract({
-        address: USDC_ADDRESS,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [address],
-      });
+      // Try to transfer from connected wallet if it has USDC + ETH for gas
+      let transferred = false;
+      try {
+        const { walletClient, publicClient, address } = await getProvider();
 
-      if (balance < amountInUnits) {
-        toast.error(`Insufficient USDC. Your wallet has ${(Number(balance) / 1e6).toFixed(2)} USDC`);
-        return;
+        const [usdcBal, ethBal] = await Promise.all([
+          publicClient.readContract({
+            address: USDC_ADDRESS,
+            abi: erc20Abi,
+            functionName: "balanceOf",
+            args: [address],
+          }),
+          publicClient.getBalance({ address }),
+        ]);
+
+        // Only attempt wallet transfer if wallet has enough USDC and some ETH for gas
+        if (usdcBal >= amountInUnits && ethBal > 0n) {
+          setDepositStep("Sending USDC from your wallet...");
+          const txHash = await walletClient.writeContract({
+            address: USDC_ADDRESS,
+            abi: erc20Abi,
+            functionName: "transfer",
+            args: [fundingAddress as `0x${string}`, amountInUnits],
+          });
+          setDepositStep("Waiting for transfer confirmation...");
+          await publicClient.waitForTransactionReceipt({ hash: txHash });
+          transferred = true;
+        }
+      } catch {
+        // Wallet transfer failed or unavailable — fall through to direct deposit
       }
 
-      // Transfer USDC to the funding/deployer address
-      const txHash = await walletClient.writeContract({
-        address: USDC_ADDRESS,
-        abi: erc20Abi,
-        functionName: "transfer",
-        args: [fundingAddress as `0x${string}`, amountInUnits],
-      });
-
-      setDepositStep("Waiting for transfer confirmation...");
-      await publicClient.waitForTransactionReceipt({ hash: txHash });
-
-      // Step 2: Deposit from deployer into Unlink privacy pool
+      // Deposit into Unlink privacy pool (uses deployer wallet funds)
       setDepositStep("Depositing into privacy pool...");
       const res = await api.treasury.deposit(token, { amount: depositAmount });
 
