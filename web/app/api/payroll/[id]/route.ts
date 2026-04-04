@@ -3,6 +3,8 @@ import { requireAdmin } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import Payroll from "@/lib/models/payroll";
 import Payment from "@/lib/models/payment";
+import "@/lib/models/department";
+import "@/lib/models/user";
 
 // GET /api/payroll/[id] — payroll details + payments
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

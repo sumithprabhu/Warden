@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import Vesting from "@/lib/models/vesting";
+import "@/lib/models/user";
 
 // GET /api/vesting — list all vesting schedules
 export async function GET(req: NextRequest) {

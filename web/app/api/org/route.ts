@@ -3,6 +3,7 @@ import { requireAdmin, requireAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import { logAction } from "@/lib/audit";
 import Organization from "@/lib/models/organization";
+import "@/lib/models/user";
 
 // GET /api/org — get current user's organization
 export async function GET(req: NextRequest) {

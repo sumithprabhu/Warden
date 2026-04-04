@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import Employee from "@/lib/models/employee";
 import User from "@/lib/models/user";
+import "@/lib/models/department";
 
 // GET /api/employees — list all employees in org
 export async function GET(req: NextRequest) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import Payroll from "@/lib/models/payroll";
+import "@/lib/models/department";
 
 // GET /api/payroll — list payroll history
 export async function GET(req: NextRequest) {
