@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { ArrowRight, Check } from "lucide-react";
 
 const plans = [
@@ -21,23 +20,23 @@ const plans = [
   {
     name: "Team",
     description: "For growing crypto-native teams",
-    price: { monthly: 49, annual: 39 },
+    price: { monthly: 0, annual: 0 },
     features: [
       "Unlimited employees",
       "Weekly / biweekly / monthly",
       "Department management",
-      "ENS identity support",
+      "Yield vault (Earn)",
       "Vesting schedules",
-      "AI anomaly detection",
-      "PDF payslip generation",
+      "Burner wallet DeFi",
+      "Audit trail",
     ],
-    cta: "Start trial",
+    cta: "Start free",
     popular: true,
   },
   {
     name: "DAO",
     description: "For decentralized organizations",
-    price: { monthly: null, annual: null },
+    price: { monthly: 0, annual: 0 },
     features: [
       "Everything in Team",
       "Multi-sig approval flow",
@@ -48,14 +47,12 @@ const plans = [
       "Custom token support",
       "Audit trail export",
     ],
-    cta: "Contact us",
+    cta: "Start free",
     popular: false,
   },
 ];
 
 export function PricingSection() {
-  const [isAnnual, setIsAnnual] = useState(true);
-
   return (
     <section id="pricing" className="relative py-32 lg:py-40 border-t border-foreground/10">
       <div className="max-w-7xl mx-auto px-6 lg:px-12">
@@ -69,41 +66,15 @@ export function PricingSection() {
             <span className="text-stroke">pricing</span>
           </h2>
           <p className="text-lg text-muted-foreground max-w-xl">
-            Start free with up to 5 employees. Scale as your team grows. Gas fees on Base are fractions of a cent.
+            Everything is free while we&apos;re on testnet. Try the full platform with no limits.
           </p>
+          <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 border border-foreground/20 text-xs font-mono text-muted-foreground">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+            Live on Base Sepolia testnet
+          </div>
         </div>
 
-        <div className="flex items-center gap-4 mb-16">
-          <span
-            className={`text-sm transition-colors ${
-              !isAnnual ? "text-foreground" : "text-muted-foreground"
-            }`}
-          >
-            Monthly
-          </span>
-          <button
-            onClick={() => setIsAnnual(!isAnnual)}
-            className="relative w-14 h-7 bg-foreground/10 rounded-full p-1 transition-colors hover:bg-foreground/20"
-          >
-            <div
-              className={`w-5 h-5 bg-foreground rounded-full transition-transform duration-300 ${
-                isAnnual ? "translate-x-7" : "translate-x-0"
-              }`}
-            />
-          </button>
-          <span
-            className={`text-sm transition-colors ${
-              isAnnual ? "text-foreground" : "text-muted-foreground"
-            }`}
-          >
-            Annual
-          </span>
-          {isAnnual && (
-            <span className="ml-2 px-2 py-1 bg-foreground text-primary-foreground text-xs font-mono">
-              Save 20%
-            </span>
-          )}
-        </div>
+        <div className="mb-16" />
 
         <div className="grid md:grid-cols-3 gap-px bg-foreground/10">
           {plans.map((plan, idx) => (
@@ -128,16 +99,7 @@ export function PricingSection() {
               </div>
 
               <div className="mb-8 pb-8 border-b border-foreground/10">
-                {plan.price.monthly !== null ? (
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-display text-5xl lg:text-6xl text-foreground">
-                      ${isAnnual ? plan.price.annual : plan.price.monthly}
-                    </span>
-                    <span className="text-muted-foreground">/month</span>
-                  </div>
-                ) : (
-                  <span className="font-display text-4xl text-foreground">Custom</span>
-                )}
+                <span className="font-display text-5xl lg:text-6xl text-foreground">Free</span>
               </div>
 
               <ul className="space-y-4 mb-10">
@@ -164,10 +126,7 @@ export function PricingSection() {
         </div>
 
         <p className="mt-12 text-center text-sm text-muted-foreground">
-          All plans include ZK-proof privacy, Base L2 settlement, and employee self-serve portal.{" "}
-          <a href="#" className="underline underline-offset-4 hover:text-foreground transition-colors">
-            Compare all features
-          </a>
+          All plans include ZK-proof privacy, Base L2 settlement, and employee self-serve portal. Currently live on testnet &mdash; all features are free.
         </p>
       </div>
     </section>
