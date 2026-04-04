@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin, requireAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
+import { logAction } from "@/lib/audit";
 import Organization from "@/lib/models/organization";
 
 // GET /api/org — get current user's organization
@@ -12,7 +13,7 @@ export async function GET(req: NextRequest) {
     }
 
     await connectDB();
-    const org = await Organization.findById(user.organizationId);
+    const org = await Organization.findById(user.organizationId).populate("admins", "name email evmAddress");
     if (!org) {
       return NextResponse.json({ error: "Organization not found" }, { status: 404 });
     }
@@ -22,10 +23,10 @@ export async function GET(req: NextRequest) {
       name: org.name,
       logo: org.logo,
       orgType: org.orgType,
-      tokenAddress: org.tokenAddress,
-      tokenSymbol: org.tokenSymbol,
-      tokenDecimals: org.tokenDecimals,
+      tokens: org.tokens,
+      treasuryAddress: org.treasuryAddress,
       approvers: org.approvers,
+      admins: org.admins,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Server error";
@@ -39,32 +40,75 @@ export async function PUT(req: NextRequest) {
   try {
     const user = await requireAdmin(req);
     const body = await req.json();
-    const { name, logo, orgType, tokenAddress, tokenSymbol, tokenDecimals, approvers } = body;
+    const { name, logo, orgType, approvers, addToken, removeTokenAddress, addAdminUserId } = body;
 
     await connectDB();
-    const org = await Organization.findByIdAndUpdate(
-      user.organizationId,
-      {
-        ...(name && { name }),
-        ...(logo !== undefined && { logo }),
-        ...(orgType && { orgType }),
-        ...(tokenAddress && { tokenAddress }),
-        ...(tokenSymbol && { tokenSymbol }),
-        ...(tokenDecimals && { tokenDecimals }),
-        ...(approvers && { approvers }),
-      },
-      { new: true },
-    );
+    const org = await Organization.findById(user.organizationId);
+    if (!org) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
+
+    if (name) org.name = name;
+    if (logo !== undefined) org.logo = logo;
+    if (orgType) org.orgType = orgType;
+    if (approvers) org.approvers = approvers;
+
+    // Add a new token
+    if (addToken && addToken.address) {
+      const exists = org.tokens.some(
+        (t: any) => t.address.toLowerCase() === addToken.address.toLowerCase()
+      );
+      if (!exists) {
+        org.tokens.push(addToken);
+        await logAction({
+          organizationId: org._id.toString(),
+          userId: user._id.toString(),
+          userName: user.name || user.email || "Admin",
+          action: "Token added",
+          details: `Added ${addToken.symbol} (${addToken.address})`,
+        });
+      }
+    }
+
+    // Remove a token
+    if (removeTokenAddress) {
+      org.tokens = org.tokens.filter(
+        (t: any) => t.address.toLowerCase() !== removeTokenAddress.toLowerCase()
+      );
+      await logAction({
+        organizationId: org._id.toString(),
+        userId: user._id.toString(),
+        userName: user.name || user.email || "Admin",
+        action: "Token removed",
+        details: `Removed token ${removeTokenAddress}`,
+      });
+    }
+
+    // Add another admin
+    if (addAdminUserId) {
+      if (!org.admins.includes(addAdminUserId)) {
+        org.admins.push(addAdminUserId);
+        await logAction({
+          organizationId: org._id.toString(),
+          userId: user._id.toString(),
+          userName: user.name || user.email || "Admin",
+          action: "Admin added",
+          details: `Added admin user ${addAdminUserId}`,
+        });
+      }
+    }
+
+    await org.save();
 
     return NextResponse.json({
       id: org._id,
       name: org.name,
       logo: org.logo,
       orgType: org.orgType,
-      tokenAddress: org.tokenAddress,
-      tokenSymbol: org.tokenSymbol,
-      tokenDecimals: org.tokenDecimals,
+      tokens: org.tokens,
+      treasuryAddress: org.treasuryAddress,
       approvers: org.approvers,
+      admins: org.admins,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Server error";

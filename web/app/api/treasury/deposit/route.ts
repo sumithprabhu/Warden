@@ -2,12 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
-import { createUnlinkClient } from "@/lib/unlink";
-import { createPublicClient, http } from "viem";
-import { baseSepolia } from "viem/chains";
+import { unlinkDeposit, UNLINK_USDC } from "@/lib/unlink-worker";
+import { logAction } from "@/lib/audit";
 import Organization from "@/lib/models/organization";
 
-// POST /api/treasury/deposit — deposit tokens into privacy pool
+// POST /api/treasury/deposit — deposit USDC into Unlink privacy pool
 export async function POST(req: NextRequest) {
   try {
     const admin = await requireAdmin(req);
@@ -24,38 +23,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Organization not found" }, { status: 404 });
     }
 
+    console.log("[Deposit] ▶ Starting deposit of $" + amount + " USDC into privacy pool");
+    console.log("[Deposit] Admin:", admin.name || admin.email);
     const mnemonic = decrypt(admin.encryptedMnemonic);
-    const unlink = createUnlinkClient(mnemonic);
+    const evmPrivateKey = (process.env.DEPLOYER_PRIVATE_KEY || process.env.EVM_PRIVATE_KEY) as string;
 
-    const publicClient = createPublicClient({
-      chain: baseSepolia,
-      transport: http(process.env.RPC_URL),
+    // Convert human amount to USDC units (6 decimals)
+    const amountInUnits = (parseFloat(amount) * 1e6).toFixed(0);
+
+    console.log(`[Deposit] Depositing ${amount} USDC (${amountInUnits} units) into Unlink pool`);
+
+    const result = await unlinkDeposit({
+      mnemonic,
+      evmPrivateKey,
+      token: UNLINK_USDC,
+      amount: amountInUnits,
     });
 
-    // Ensure ERC-20 approval for Permit2
-    const approval = await unlink.ensureErc20Approval({
-      token: org.tokenAddress,
-      amount,
+    console.log(`[Deposit] Result:`, result);
+
+    await logAction({
+      organizationId: org._id.toString(),
+      userId: admin._id.toString(),
+      userName: admin.name || admin.email || "Admin",
+      action: "Pool deposit",
+      details: `Deposited $${amount} USDC into privacy pool. TX: ${result.txId}`,
     });
-
-    if (approval.status === "submitted") {
-      await publicClient.waitForTransactionReceipt({
-        hash: approval.txHash as `0x${string}`,
-      });
-    }
-
-    // Deposit into privacy pool
-    const deposit = await unlink.deposit({
-      token: org.tokenAddress,
-      amount,
-    });
-
-    // Poll for completion
-    const confirmed = await unlink.pollTransactionStatus(deposit.txId);
 
     return NextResponse.json({
-      txId: deposit.txId,
-      status: confirmed,
+      txId: result.txId,
+      status: result.status,
+      amount,
+      message: "Deposited into privacy pool successfully",
     });
   } catch (error) {
     console.error("Deposit error:", error);

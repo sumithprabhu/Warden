@@ -1,31 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
-import { connectDB } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
-import { createUnlinkClient } from "@/lib/unlink";
-import Organization from "@/lib/models/organization";
+import { getUnlinkBalances, UNLINK_USDC } from "@/lib/unlink-worker";
+import { formatUnits } from "viem";
 
-// GET /api/me/balance — employee's Unlink balance
+// GET /api/me/balance — employee's private Unlink balance
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuth(req);
-    await connectDB();
-
-    const org = await Organization.findById(user.organizationId);
-    if (!org) {
-      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
-    }
-
     const mnemonic = decrypt(user.encryptedMnemonic);
-    const unlink = createUnlinkClient(mnemonic);
 
-    const balances = await unlink.getBalances({ token: org.tokenAddress });
+    let balance = "0";
+    try {
+      const result = await getUnlinkBalances(mnemonic);
+      const usdcBal = result.balances?.find(
+        (b: any) => b.token.toLowerCase() === UNLINK_USDC.toLowerCase()
+      );
+      if (usdcBal) {
+        balance = formatUnits(BigInt(usdcBal.amount), 6);
+      }
+    } catch (err) {
+      console.warn("Failed to get Unlink balance:", (err as Error).message);
+    }
 
     return NextResponse.json({
       unlinkAddress: user.unlinkAddress,
-      tokenSymbol: org.tokenSymbol,
-      tokenDecimals: org.tokenDecimals,
-      balances,
+      balance,
+      token: "USDC",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Server error";

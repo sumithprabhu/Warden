@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
-import { createUnlinkClient } from "@/lib/unlink";
+import { unlinkWithdraw, UNLINK_USDC } from "@/lib/unlink-worker";
+import { logAction } from "@/lib/audit";
 import Organization from "@/lib/models/organization";
 
-// POST /api/treasury/withdraw — withdraw tokens from privacy pool
+// POST /api/treasury/withdraw — withdraw from privacy pool to EVM address
 export async function POST(req: NextRequest) {
   try {
     const admin = await requireAdmin(req);
@@ -23,22 +24,31 @@ export async function POST(req: NextRequest) {
     }
 
     const mnemonic = decrypt(admin.encryptedMnemonic);
-    const unlink = createUnlinkClient(mnemonic);
-
-    // Default to admin's EVM address if not specified
     const recipient = recipientEvmAddress || admin.evmAddress;
+    const amountInUnits = (parseFloat(amount) * 1e6).toFixed(0);
 
-    const withdrawal = await unlink.withdraw({
+    console.log(`[Withdraw] Withdrawing ${amount} USDC to ${recipient}`);
+
+    const result = await unlinkWithdraw({
+      mnemonic,
+      token: UNLINK_USDC,
+      amount: amountInUnits,
       recipientEvmAddress: recipient,
-      token: org.tokenAddress,
-      amount,
     });
 
-    const confirmed = await unlink.pollTransactionStatus(withdrawal.txId);
+    await logAction({
+      organizationId: org._id.toString(),
+      userId: admin._id.toString(),
+      userName: admin.name || admin.email || "Admin",
+      action: "Pool withdrawal",
+      details: `Withdrew $${amount} USDC from privacy pool to ${recipient}. TX: ${result.txId}`,
+    });
 
     return NextResponse.json({
-      txId: withdrawal.txId,
-      status: confirmed,
+      txId: result.txId,
+      status: result.status,
+      amount,
+      message: "Withdrawn from privacy pool",
     });
   } catch (error) {
     console.error("Withdraw error:", error);

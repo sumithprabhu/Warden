@@ -4,6 +4,24 @@ import { connectDB } from "@/lib/db";
 import { resolveENS, isENSName } from "@/lib/ens";
 import Invite from "@/lib/models/invite";
 
+// GET /api/employees/invite — list all invites for this org
+export async function GET(req: NextRequest) {
+  try {
+    const admin = await requireAdmin(req);
+    await connectDB();
+
+    const invites = await Invite.find({ organizationId: admin.organizationId })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return NextResponse.json({ invites });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Server error";
+    const status = message === "Unauthorized" ? 401 : message === "Forbidden" ? 403 : 500;
+    return NextResponse.json({ error: message }, { status });
+  }
+}
+
 // POST /api/employees/invite — create invite link
 export async function POST(req: NextRequest) {
   try {
@@ -54,6 +72,42 @@ export async function POST(req: NextRequest) {
         expiresAt: invite.expiresAt,
       },
     });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Server error";
+    const status = message === "Unauthorized" ? 401 : message === "Forbidden" ? 403 : 500;
+    return NextResponse.json({ error: message }, { status });
+  }
+}
+
+// DELETE /api/employees/invite — revoke an invite
+export async function DELETE(req: NextRequest) {
+  try {
+    const admin = await requireAdmin(req);
+    const { searchParams } = new URL(req.url);
+    const inviteId = searchParams.get("id");
+
+    if (!inviteId) {
+      return NextResponse.json({ error: "Invite ID is required" }, { status: 400 });
+    }
+
+    await connectDB();
+
+    const invite = await Invite.findOne({
+      _id: inviteId,
+      organizationId: admin.organizationId,
+    });
+
+    if (!invite) {
+      return NextResponse.json({ error: "Invite not found" }, { status: 404 });
+    }
+
+    if (invite.used) {
+      return NextResponse.json({ error: "Invite already accepted, cannot revoke" }, { status: 400 });
+    }
+
+    await Invite.deleteOne({ _id: inviteId });
+
+    return NextResponse.json({ success: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Server error";
     const status = message === "Unauthorized" ? 401 : message === "Forbidden" ? 403 : 500;

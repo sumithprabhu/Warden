@@ -1,35 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
-import { connectDB } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
-import { createUnlinkClient } from "@/lib/unlink";
+import { unlinkWithdraw, UNLINK_USDC } from "@/lib/unlink-worker";
 import { resolveENS, isENSName } from "@/lib/ens";
-import Organization from "@/lib/models/organization";
 
-// POST /api/me/withdraw — employee withdraws to EVM wallet
+// POST /api/me/withdraw — employee withdraws from privacy pool to EVM wallet
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth(req);
     const { amount, recipientEvmAddress } = await req.json();
 
-    if (!amount || !recipientEvmAddress) {
-      return NextResponse.json(
-        { error: "amount and recipientEvmAddress are required" },
-        { status: 400 },
-      );
+    if (!amount) {
+      return NextResponse.json({ error: "amount is required" }, { status: 400 });
     }
 
-    await connectDB();
+    // Default to user's own wallet if no address provided
+    let resolvedAddress = recipientEvmAddress || user.evmAddress;
 
-    const org = await Organization.findById(user.organizationId);
-    if (!org) {
-      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    if (!resolvedAddress) {
+      return NextResponse.json({ error: "No wallet address. Set one in your profile." }, { status: 400 });
     }
 
     // Resolve ENS name if provided
-    let resolvedAddress = recipientEvmAddress;
-    if (isENSName(recipientEvmAddress)) {
-      const resolved = await resolveENS(recipientEvmAddress);
+    if (isENSName(resolvedAddress)) {
+      const resolved = await resolveENS(resolvedAddress);
       if (!resolved) {
         return NextResponse.json({ error: "Could not resolve ENS name" }, { status: 400 });
       }
@@ -37,19 +31,22 @@ export async function POST(req: NextRequest) {
     }
 
     const mnemonic = decrypt(user.encryptedMnemonic);
-    const unlink = createUnlinkClient(mnemonic);
+    const amountInUnits = (parseFloat(amount) * 1e6).toFixed(0);
 
-    const withdrawal = await unlink.withdraw({
+    console.log(`[Employee Withdraw] ${amount} USDC to ${resolvedAddress}`);
+
+    const result = await unlinkWithdraw({
+      mnemonic,
+      token: UNLINK_USDC,
+      amount: amountInUnits,
       recipientEvmAddress: resolvedAddress,
-      token: org.tokenAddress,
-      amount,
     });
 
-    const confirmed = await unlink.pollTransactionStatus(withdrawal.txId);
-
     return NextResponse.json({
-      txId: withdrawal.txId,
-      status: confirmed,
+      txId: result.txId,
+      status: result.status,
+      amount,
+      message: "Withdrawal from privacy pool submitted",
     });
   } catch (error) {
     console.error("Employee withdraw error:", error);

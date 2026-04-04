@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import { decrypt } from "@/lib/crypto";
-import { createUnlinkClient } from "@/lib/unlink";
+import { getUnlinkBalances, UNLINK_USDC } from "@/lib/unlink-worker";
 import Organization from "@/lib/models/organization";
+import { formatUnits } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 
-// GET /api/treasury/balance — get Unlink pool + EVM wallet balance
+// GET /api/treasury/balance — get Unlink pool balance + on-chain treasury balance
 export async function GET(req: NextRequest) {
   try {
     const admin = await requireAdmin(req);
@@ -16,17 +18,29 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Organization not found" }, { status: 404 });
     }
 
-    // Use admin's mnemonic to check org treasury balance
-    const mnemonic = decrypt(admin.encryptedMnemonic);
-    const unlink = createUnlinkClient(mnemonic);
+    // Get Unlink privacy pool balance (the actual private balance)
+    let poolBalance = "0";
+    try {
+      const mnemonic = decrypt(admin.encryptedMnemonic);
+      const unlinkBal = await getUnlinkBalances(mnemonic);
+      const usdcBal = unlinkBal.balances?.find(
+        (b: any) => b.token.toLowerCase() === UNLINK_USDC.toLowerCase()
+      );
+      if (usdcBal) {
+        poolBalance = formatUnits(BigInt(usdcBal.amount), 6);
+      }
+    } catch (err) {
+      console.warn("Failed to get Unlink balance:", (err as Error).message);
+    }
 
-    const balances = await unlink.getBalances({ token: org.tokenAddress });
+    // Funding address — where users send USDC before depositing into pool
+    const deployerKey = (process.env.DEPLOYER_PRIVATE_KEY || process.env.EVM_PRIVATE_KEY) as `0x${string}`;
+    const fundingAddress = privateKeyToAccount(deployerKey).address;
 
     return NextResponse.json({
-      tokenAddress: org.tokenAddress,
-      tokenSymbol: org.tokenSymbol,
-      tokenDecimals: org.tokenDecimals,
-      balances,
+      poolBalance,
+      poolToken: UNLINK_USDC,
+      fundingAddress,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Server error";

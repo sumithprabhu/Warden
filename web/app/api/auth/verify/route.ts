@@ -2,11 +2,33 @@ import { NextRequest, NextResponse } from "next/server";
 import { PrivyClient } from "@privy-io/server-auth";
 import { connectDB } from "@/lib/db";
 import User from "@/lib/models/user";
+import "@/lib/models/organization";
 
 const privy = new PrivyClient(
   process.env.NEXT_PUBLIC_PRIVY_APP_ID!,
   process.env.PRIVY_APP_SECRET!,
 );
+
+function getWalletAddress(privyUser: any): string | undefined {
+  // 1. Direct wallet field (most recent linked wallet)
+  if (privyUser.wallet?.address) return privyUser.wallet.address;
+
+  // 2. Search linkedAccounts for embedded wallet (walletClientType === 'privy')
+  if (privyUser.linkedAccounts) {
+    const embedded = privyUser.linkedAccounts.find(
+      (a: any) => a.type === "wallet" && a.walletClientType === "privy"
+    );
+    if (embedded?.address) return embedded.address;
+
+    // 3. Any wallet at all
+    const anyWallet = privyUser.linkedAccounts.find(
+      (a: any) => a.type === "wallet"
+    );
+    if (anyWallet?.address) return anyWallet.address;
+  }
+
+  return undefined;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,21 +41,28 @@ export async function POST(req: NextRequest) {
     const verifiedClaims = await privy.verifyAuthToken(token);
     const privyId = verifiedClaims.userId;
 
-    // Get Privy user details for email/wallet
     const privyUser = await privy.getUser(privyId);
+    const walletAddress = getWalletAddress(privyUser);
+
+    console.log("[Verify] User:", privyId, "wallet:", walletAddress || "none");
 
     await connectDB();
     const user = await User.findOne({ privyId }).populate("organizationId");
 
     if (!user) {
-      // User exists in Privy but not in our DB — needs onboarding
       return NextResponse.json({
         authenticated: true,
         onboarded: false,
         privyId,
         email: privyUser.email?.address,
-        walletAddress: privyUser.wallet?.address,
+        walletAddress,
       });
+    }
+
+    // Update evmAddress if missing but Privy has one
+    if (!user.evmAddress && walletAddress) {
+      user.evmAddress = walletAddress;
+      await user.save();
     }
 
     return NextResponse.json({
@@ -46,8 +75,9 @@ export async function POST(req: NextRequest) {
         name: user.name,
         role: user.role,
         unlinkAddress: user.unlinkAddress,
-        evmAddress: user.evmAddress,
+        evmAddress: user.evmAddress || walletAddress,
         ensName: user.ensName,
+        profileCompleted: user.profileCompleted ?? false,
         organization: user.organizationId,
       },
     });
