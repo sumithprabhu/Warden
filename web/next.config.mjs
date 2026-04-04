@@ -25,7 +25,10 @@ const nextConfig = {
     };
     return config;
   },
-  serverExternalPackages: ['pino', 'thread-stream', 'why-is-node-running'],
+  serverExternalPackages: ['pino', 'thread-stream', 'why-is-node-running', '@unlink-xyz/sdk', '@scure/bip39'],
+  outputFileTracingIncludes: {
+    '/api/**': ['./workers/**', './node_modules/@unlink-xyz/**', './node_modules/viem/**', './node_modules/@scure/**', './node_modules/@noble/**'],
+  },
 }
 
 export default nextConfig

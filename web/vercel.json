@@ -1,5 +1,11 @@
 {
   "buildCommand": "next build --webpack",
   "installCommand": "npm install --legacy-peer-deps",
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "functions": {
+    "app/api/**/*.ts": {
+      "maxDuration": 120,
+      "includeFiles": "workers/**"
+    }
+  }
 }
