@@ -37,7 +37,7 @@ function runWorker(operation: string, params: Record<string, any>): Promise<Unli
     execFile(
       "node",
       [WORKER_PATH, operation, JSON.stringify(paramsWithKey)],
-      { timeout: 360000, env: { ...process.env, NODE_PATH: NODE_MODULES } }, // 6 min timeout
+      { timeout: 360000, env: { ...process.env }, cwd: CWD }, // 6 min timeout, cwd ensures node_modules resolution
       (error, stdout, stderr) => {
         if (stderr) console.error("Unlink worker stderr:", stderr);
 

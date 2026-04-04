@@ -27,7 +27,19 @@ const nextConfig = {
   },
   serverExternalPackages: ['pino', 'thread-stream', 'why-is-node-running', '@unlink-xyz/sdk', '@scure/bip39'],
   outputFileTracingIncludes: {
-    '/api/**': ['./workers/**', './node_modules/@unlink-xyz/**', './node_modules/viem/**', './node_modules/@scure/**', './node_modules/@noble/**'],
+    '/api/**': [
+      './workers/**',
+      './node_modules/@unlink-xyz/**',
+      './node_modules/viem/**',
+      './node_modules/abitype/**',
+      './node_modules/ox/**',
+      './node_modules/@scure/**',
+      './node_modules/@noble/**',
+      './node_modules/@adraffy/**',
+      './node_modules/isows/**',
+      './node_modules/ws/**',
+      './node_modules/eventemitter3/**',
+    ],
   },
 }
 
