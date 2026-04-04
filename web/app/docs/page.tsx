@@ -494,7 +494,6 @@ export default function DocsPage() {
               <div className="not-prose my-6 space-y-3">
                 {[
                   { name: "EarnVault", addr: "0xe61Ca5eA39a41959b4F5747aA4596837b20fEB6C", desc: "Deposit USDC, receive lpUSD 1:1. Burn lpUSD to redeem." },
-                  { name: "TreasuryFactory", addr: "0xbCb4DbEB0c386D1ab35f953FD72C823595130204", desc: "Deploys per-org treasury contracts via CREATE2." },
                   { name: "USDC", addr: "0x036CbD53842c5426634e7929541eC2318f3dCF7e", desc: "Circle USDC on Base Sepolia testnet." },
                 ].map((c) => (
                   <div key={c.name} className="border border-zinc-200 dark:border-zinc-800 rounded-lg p-4">
