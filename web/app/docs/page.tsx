@@ -112,7 +112,7 @@ export default function DocsPage() {
             <section id="how-it-works" className="pt-12">
               <h2>How It Works</h2>
               <p>
-                Warden combines <strong>on-chain smart contracts</strong> with <strong>Unlink&apos;s zero-knowledge privacy pool</strong> to make payroll completely private. Here&apos;s the high-level flow:
+                Warden keeps your payroll private using a zero-knowledge privacy pool. Funds go in, get transferred privately, and come out &mdash; with no visible link between sender and receiver.
               </p>
 
               {/* Mermaid-style diagram as styled divs */}
