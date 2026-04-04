@@ -9,6 +9,7 @@ const navLinks = [
   { name: "How it works", href: "#how-it-works" },
   { name: "Security", href: "#security" },
   { name: "Pricing", href: "#pricing" },
+  { name: "Docs", href: "/docs" },
 ];
 
 export function Navigation() {
