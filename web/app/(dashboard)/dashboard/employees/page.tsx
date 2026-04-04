@@ -39,12 +39,14 @@ export default function EmployeesPage() {
   const [departments, setDepartments] = useState<any[]>([]);
   const [invites, setInvites] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [org, setOrg] = useState<any>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [inviteLink, setInviteLink] = useState("");
 
   // Invite form
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteEns, setInviteEns] = useState("");
+  const [inviteToken, setInviteToken] = useState("");
   const [inviteSalary, setInviteSalary] = useState("");
   const [inviteFrequency, setInviteFrequency] = useState("MONTHLY");
   const [inviteType, setInviteType] = useState("FULL_TIME");
@@ -54,14 +56,16 @@ export default function EmployeesPage() {
     try {
       const token = await getAccessToken();
       if (!token) return;
-      const [empRes, deptRes, invRes] = await Promise.all([
+      const [empRes, deptRes, invRes, orgRes] = await Promise.all([
         api.employees.list(token),
         api.departments.list(token),
         api.employees.listInvites(token),
+        api.org.get(token),
       ]);
       setEmployees(empRes.employees || []);
       setDepartments(deptRes.departments || []);
       setInvites(invRes.invites || []);
+      setOrg(orgRes);
     } catch {
       toast.error("Failed to load employees");
     } finally {
@@ -71,13 +75,23 @@ export default function EmployeesPage() {
 
   useEffect(() => { load(); }, [getAccessToken]);
 
+  const resetInviteForm = () => {
+    setInviteEmail("");
+    setInviteToken("");
+    setInviteSalary("");
+    setInviteFrequency("MONTHLY");
+    setInviteType("FULL_TIME");
+    setInviteDept("");
+    setInviteLink("");
+  };
+
   const handleInvite = async () => {
     if (!inviteSalary.trim()) {
       toast.error("Salary is required");
       return;
     }
-    if (!inviteEmail.trim() && !inviteEns.trim()) {
-      toast.error("Email or ENS name is required");
+    if (!inviteEmail.trim()) {
+      toast.error("Email is required");
       return;
     }
 
@@ -87,25 +101,18 @@ export default function EmployeesPage() {
       if (!token) return;
 
       const res = await api.employees.invite(token, {
-        email: inviteEmail.trim() || undefined,
-        ensName: inviteEns.trim() || undefined,
+        email: inviteEmail.trim(),
         salary: inviteSalary.trim(),
+        token: inviteToken || undefined,
         payFrequency: inviteFrequency,
         employeeType: inviteType,
         departmentId: inviteDept || undefined,
       });
 
-      const inviteLink = res.invite?.inviteUrl || `${window.location.origin}/invite/${res.invite?.token || res.token}`;
-      await navigator.clipboard.writeText(inviteLink);
-      toast.success("Invite created! Link copied to clipboard.");
-
-      setInviteOpen(false);
-      setInviteEmail("");
-      setInviteEns("");
-      setInviteSalary("");
-      setInviteFrequency("MONTHLY");
-      setInviteType("FULL_TIME");
-      setInviteDept("");
+      const link = res.invite?.inviteUrl || `${window.location.origin}/invite/${res.invite?.token || res.token}`;
+      await navigator.clipboard.writeText(link);
+      setInviteLink(link);
+      toast.success("Invite link copied to clipboard!");
       load();
     } catch (err: any) {
       toast.error(err.message || "Failed to create invite");
@@ -168,7 +175,7 @@ export default function EmployeesPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Employees</h1>
           <p className="text-muted-foreground mt-1">Manage your team members</p>
         </div>
-        <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+        <Dialog open={inviteOpen} onOpenChange={(open) => { setInviteOpen(open); if (!open) resetInviteForm(); }}>
           <DialogTrigger asChild>
             <Button className="bg-foreground hover:bg-foreground/90 text-background rounded-xl">
               <Plus className="w-4 h-4 mr-2" />
@@ -179,84 +186,111 @@ export default function EmployeesPage() {
             <DialogHeader>
               <DialogTitle>Invite Employee</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 mt-4">
-              <div className="space-y-2">
-                <Label>Email</Label>
-                <Input
-                  placeholder="employee@company.com"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  className="h-10 rounded-xl"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Or ENS name</Label>
-                <Input
-                  placeholder="name.eth"
-                  value={inviteEns}
-                  onChange={(e) => setInviteEns(e.target.value)}
-                  className="h-10 rounded-xl"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Salary (token amount)</Label>
-                <Input
-                  placeholder="5000"
-                  value={inviteSalary}
-                  onChange={(e) => setInviteSalary(e.target.value)}
-                  className="h-10 rounded-xl"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label>Frequency</Label>
-                  <Select value={inviteFrequency} onValueChange={setInviteFrequency}>
-                    <SelectTrigger className="h-10 rounded-xl">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="WEEKLY">Weekly</SelectItem>
-                      <SelectItem value="BIWEEKLY">Biweekly</SelectItem>
-                      <SelectItem value="MONTHLY">Monthly</SelectItem>
-                    </SelectContent>
-                  </Select>
+            {inviteLink ? (
+              <div className="space-y-4 mt-4">
+                <p className="text-sm text-muted-foreground">
+                  Invite created! Share this link with the employee.
+                </p>
+                <div
+                  className="flex items-center gap-2 bg-accent/50 rounded-xl px-3 py-3 cursor-pointer hover:bg-accent transition-colors"
+                  onClick={() => {
+                    navigator.clipboard.writeText(inviteLink);
+                    toast.success("Link copied!");
+                  }}
+                >
+                  <Link2 className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <span className="font-mono text-xs flex-1 break-all select-all">{inviteLink}</span>
+                  <Copy className="w-4 h-4 text-muted-foreground shrink-0" />
                 </div>
-                <div className="space-y-2">
-                  <Label>Type</Label>
-                  <Select value={inviteType} onValueChange={setInviteType}>
-                    <SelectTrigger className="h-10 rounded-xl">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="FULL_TIME">Full-time</SelectItem>
-                      <SelectItem value="CONTRACTOR">Contractor</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <p className="text-xs text-muted-foreground text-center">Link copied to clipboard</p>
               </div>
-              {departments.length > 0 && (
+            ) : (
+              <div className="space-y-4 mt-4">
                 <div className="space-y-2">
-                  <Label>Department</Label>
-                  <Select value={inviteDept} onValueChange={setInviteDept}>
-                    <SelectTrigger className="h-10 rounded-xl">
-                      <SelectValue placeholder="Select department" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {departments.map((d: any) => (
-                        <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>Email</Label>
+                  <Input
+                    placeholder="employee@company.com"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    className="h-10 rounded-xl"
+                  />
                 </div>
-              )}
-              <Button
-                onClick={handleInvite}
-                disabled={submitting}
-                className="w-full h-11 bg-foreground hover:bg-foreground/90 text-background rounded-xl"
-              >
-                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create invite link"}
-              </Button>
-            </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Type</Label>
+                    <Select value={inviteType} onValueChange={setInviteType}>
+                      <SelectTrigger className="h-10 rounded-xl">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="FULL_TIME">Full-time</SelectItem>
+                        <SelectItem value="CONTRACTOR">Contractor</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Frequency</Label>
+                    <Select value={inviteFrequency} onValueChange={setInviteFrequency}>
+                      <SelectTrigger className="h-10 rounded-xl">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="WEEKLY">Weekly</SelectItem>
+                        <SelectItem value="BIWEEKLY">Biweekly</SelectItem>
+                        <SelectItem value="MONTHLY">Monthly</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {org?.tokens?.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Token</Label>
+                    <Select value={inviteToken} onValueChange={setInviteToken}>
+                      <SelectTrigger className="h-10 rounded-xl">
+                        <SelectValue placeholder="Select token" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {org.tokens.map((t: any) => (
+                          <SelectItem key={t.address} value={t.address}>{t.symbol} — {t.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>Salary (token amount)</Label>
+                  <Input
+                    type="number"
+                    placeholder="5000"
+                    value={inviteSalary}
+                    onChange={(e) => setInviteSalary(e.target.value)}
+                    className="h-10 rounded-xl"
+                  />
+                </div>
+                {departments.length > 0 && (
+                  <div className="space-y-2">
+                    <Label>Department</Label>
+                    <Select value={inviteDept} onValueChange={setInviteDept}>
+                      <SelectTrigger className="h-10 rounded-xl">
+                        <SelectValue placeholder="Select department" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {departments.map((d: any) => (
+                          <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <Button
+                  onClick={handleInvite}
+                  disabled={submitting || !inviteEmail.trim() || !inviteSalary.trim()}
+                  className="w-full h-11 bg-foreground hover:bg-foreground/90 text-background rounded-xl"
+                >
+                  {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create invite link"}
+                </Button>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       </div>
@@ -275,7 +309,7 @@ export default function EmployeesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
+                  <TableHead className="pl-6">Name</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Salary</TableHead>
                   <TableHead>Frequency</TableHead>
@@ -286,11 +320,11 @@ export default function EmployeesPage() {
               <TableBody>
                 {employees.map((emp: any) => (
                   <TableRow key={emp._id}>
-                    <TableCell>
+                    <TableCell className="pl-6">
                       <div>
-                        <div className="font-medium">{emp.userId?.name || "Unnamed"}</div>
+                        <div className="font-medium">{emp.name || "Unnamed"}</div>
                         <div className="text-xs text-muted-foreground">
-                          {emp.userId?.ensName || emp.userId?.email || emp.userId?.evmAddress?.slice(0, 10) + "..."}
+                          {emp.ensName || emp.email || emp.evmAddress?.slice(0, 10) + "..."}
                         </div>
                       </div>
                     </TableCell>
@@ -336,7 +370,7 @@ export default function EmployeesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Recipient</TableHead>
+                  <TableHead className="pl-6">Recipient</TableHead>
                   <TableHead>Salary</TableHead>
                   <TableHead>Expires</TableHead>
                   <TableHead className="w-24"></TableHead>
@@ -345,7 +379,7 @@ export default function EmployeesPage() {
               <TableBody>
                 {pendingInvites.map((invite: any) => (
                   <TableRow key={invite._id}>
-                    <TableCell>
+                    <TableCell className="pl-6">
                       <div className="flex items-center gap-2">
                         <Mail className="w-3 h-3 text-muted-foreground" />
                         <span className="text-sm">{invite.email || invite.ensName || "—"}</span>
@@ -393,7 +427,7 @@ export default function EmployeesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Recipient</TableHead>
+                  <TableHead className="pl-6">Recipient</TableHead>
                   <TableHead>Salary</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Date</TableHead>
@@ -404,7 +438,7 @@ export default function EmployeesPage() {
                   const status = getInviteStatus(invite);
                   return (
                     <TableRow key={invite._id}>
-                      <TableCell>
+                      <TableCell className="pl-6">
                         <span className="text-sm">{invite.email || invite.ensName || "—"}</span>
                       </TableCell>
                       <TableCell className="font-mono text-sm">{invite.salary}</TableCell>
